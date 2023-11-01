@@ -47,7 +47,7 @@ class S3FD():
                 scaled_img = scaled_img.astype('float32')
                 scaled_img -= img_mean
                 scaled_img = scaled_img[[2, 1, 0], :, :]
-                x = torch.from_numpy(scaled_img).unsqueeze(0)# .to(self.device)
+                x = torch.from_numpy(scaled_img).unsqueeze(0).to(self.device)
                 y = self.net(x)
                 print("y")
 
