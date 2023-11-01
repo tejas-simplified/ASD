@@ -14,6 +14,7 @@ from scenedetect.detectors import ContentDetector
 
 from model.faceDetector.s3fd import S3FD
 from talkNet import talkNet
+import ffmpeg
 import json
 
 warnings.filterwarnings("ignore")
@@ -95,7 +96,6 @@ def scene_detect(args):
 
 def inference_video(args):
 	# GPU: Face detection, output is the list contains the face location and score in this frame
-	# DET = S3FD(device='cuda')
 	DET = S3FD(device='cpu')
 	flist = glob.glob(os.path.join(args.pyframesPath, '*.jpg'))
 	flist.sort()
@@ -111,7 +111,6 @@ def inference_video(args):
 	savePath = os.path.join(args.pyworkPath,'faces.pckl')
 	with open(savePath, 'wb') as fil:
 		pickle.dump(dets, fil)
-	print("dets : ", dets)
 	return dets
 
 def bb_intersection_over_union(boxA, boxB, evalCol = False):
@@ -163,11 +162,11 @@ def track_shot(args, sceneFaces):
 				tracks.append({'frame':frameI,'bbox':bboxesI})
 	return tracks
 
-def crop_video(args, track, cropFile):
+def crop_video(args, track, cropFile, fps):
 	# CPU: crop the face clips
 	flist = glob.glob(os.path.join(args.pyframesPath, '*.jpg')) # Read the frames
 	flist.sort()
-	vOut = cv2.VideoWriter(cropFile + 't.avi', cv2.VideoWriter_fourcc(*'XVID'), 25, (224,224))# Write video
+	vOut = cv2.VideoWriter(cropFile + 't.avi', cv2.VideoWriter_fourcc(*'XVID'), fps, (224,224))# Write video
 	dets = {'x':[], 'y':[], 's':[]}
 	for det in track['bbox']: # Read the tracks
 		dets['s'].append(max((det[3]-det[1]), (det[2]-det[0]))/2) 
@@ -187,8 +186,8 @@ def crop_video(args, track, cropFile):
 		face = frame[int(my-bs):int(my+bs*(1+2*cs)),int(mx-bs*(1+cs)):int(mx+bs*(1+cs))]
 		vOut.write(cv2.resize(face, (224, 224)))
 	audioTmp    = cropFile + '.wav'
-	audioStart  = (track['frame'][0]) / 25
-	audioEnd    = (track['frame'][-1]+1) / 25
+	audioStart  = (track['frame'][0]) / fps
+	audioEnd    = (track['frame'][-1]+1) / fps
 	vOut.release()
 	command = ("ffmpeg -y -i %s -async 1 -ac 1 -vn -acodec pcm_s16le -ar 16000 -threads %d -ss %.3f -to %.3f %s -loglevel panic" % \
 		      (args.audioFilePath, args.nDataLoaderThread, audioStart, audioEnd, audioTmp)) 
@@ -207,8 +206,7 @@ def extract_MFCC(file, outPath):
 	featuresPath = os.path.join(outPath, file.split('/')[-1].replace('.wav', '.npy'))
 	numpy.save(featuresPath, mfcc)
 
-def evaluate_network(files, args):
-	print("files : ", files)
+def evaluate_network(files, args, fps):
 	# GPU: active speaker detection by pretrained TalkNet
 	s = talkNet()
 	s.loadParameters(args.pretrainModel)
@@ -220,7 +218,8 @@ def evaluate_network(files, args):
 	for file in tqdm.tqdm(files, total = len(files)):
 		fileName = os.path.splitext(file.split('/')[-1])[0] # Load audio and video
 		_, audio = wavfile.read(os.path.join(args.pycropPath, fileName + '.wav'))
-		audioFeature = python_speech_features.mfcc(audio, 16000, numcep = 13, winlen = 0.025, winstep = 0.010)
+		winstep = 1/(fps * 4)
+		audioFeature = python_speech_features.mfcc(audio, 16000, numcep = 13, winlen = 0.025, winstep = winstep)
 		video = cv2.VideoCapture(os.path.join(args.pycropPath, fileName + '.avi'))
 		videoFeature = []
 		while video.isOpened():
@@ -234,17 +233,23 @@ def evaluate_network(files, args):
 				break
 		video.release()
 		videoFeature = numpy.array(videoFeature)
-		length = min((audioFeature.shape[0] - audioFeature.shape[0] % 4) / 100, videoFeature.shape[0] / 25)
-		audioFeature = audioFeature[:int(round(length * 100)),:]
-		videoFeature = videoFeature[:int(round(length * 25)),:,:]
+		print("orig audioFeature", audioFeature.shape)
+		print("orig videofeature : ", videoFeature.shape)
+		length = min((audioFeature.shape[0] - audioFeature.shape[0] % 4) / (fps*4), videoFeature.shape[0] / fps)
+		audioFeature = audioFeature[:int(round(length * (fps * 4))),:]
+		videoFeature = videoFeature[:int(round(length * fps)),:,:]
+		print(audioFeature.shape, videoFeature.shape)
 		allScore = [] # Evaluation use TalkNet
 		for duration in durationSet:
 			batchSize = int(math.ceil(length / duration))
 			scores = []
 			with torch.no_grad():
 				for i in range(batchSize):
-					inputA = torch.FloatTensor(audioFeature[i * duration * 100:(i+1) * duration * 100,:]).unsqueeze(0)#.cuda()
-					inputV = torch.FloatTensor(videoFeature[i * duration * 25: (i+1) * duration * 25,:,:]).unsqueeze(0)#.cuda()
+					print("audio", i * duration * (fps*4), (i+1) * duration * (fps*4))
+					print("video", i * duration * fps, (i+1) * duration * fps)
+
+					inputA = torch.FloatTensor(audioFeature[i * duration * (fps*4):(i+1) * duration * (fps*4),:]).unsqueeze(0) #.cuda()
+					inputV = torch.FloatTensor(videoFeature[i * duration * fps: (i+1) * duration * fps,:,:]).unsqueeze(0) #.cuda()
 					embedA = s.model.forward_audio_frontend(inputA)
 					embedV = s.model.forward_visual_frontend(inputV)	
 					embedA, embedV = s.model.forward_cross_attention(embedA, embedV)
@@ -254,16 +259,12 @@ def evaluate_network(files, args):
 			allScore.append(scores)
 		allScore = numpy.round((numpy.mean(numpy.array(allScore), axis = 0)), 1).astype(float)
 		allScores.append(allScore)	
-	print("allScores : ", len(allScores))
 	return allScores
 
-def visualization(tracks, scores, args):
+def visualization(tracks, scores, args, fps):
 	# CPU: visulize the result for video format
 	flist = glob.glob(os.path.join(args.pyframesPath, '*.jpg'))
 	flist.sort()
-	
-	print("no of image files : ", len(flist))
-
 	faces = [[] for i in range(len(flist))]
 	for tidx, track in enumerate(tracks):
 		score = scores[tidx]
@@ -271,13 +272,10 @@ def visualization(tracks, scores, args):
 			s = score[max(fidx - 2, 0): min(fidx + 3, len(score) - 1)] # average smoothing
 			s = numpy.mean(s)
 			faces[frame].append({'track':tidx, 'score':float(s),'s':track['proc_track']['s'][fidx], 'x':track['proc_track']['x'][fidx], 'y':track['proc_track']['y'][fidx]})
-	
-	# print("faces : ", faces)
-
 	firstImage = cv2.imread(flist[0])
 	fw = firstImage.shape[1]
 	fh = firstImage.shape[0]
-	vOut = cv2.VideoWriter(os.path.join(args.pyaviPath, 'video_only.avi'), cv2.VideoWriter_fourcc(*'XVID'), 25, (fw,fh))
+	vOut = cv2.VideoWriter(os.path.join(args.pyaviPath, 'video_only.avi'), cv2.VideoWriter_fourcc(*'XVID'), fps, (fw,fh))
 	colorDict = {0: 0, 1: 255}
 	data = []
 	for fidx, fname in tqdm.tqdm(enumerate(flist), total = len(flist)):
@@ -290,18 +288,19 @@ def visualization(tracks, scores, args):
 			cv2.putText(image,'%s'%(txt), (int(face['x']-face['s']), int(face['y']-face['s'])), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0,clr,255-clr),5)
 			x_, y_, w_, h_ = face['x']-face['s'], face['y']-face['s'], face['s'] * 2, face['s'] * 2
 			tmp_data.append([x_, y_, w_, h_, txt])
-		data.append(tmp_data)
 		vOut.write(image)
+		data.append(tmp_data)
 	vOut.release()
-	
-	with open("/tmp/playground/data.json", "w") as f:
+
+	with open("/tmp/face_detection_asd_data.json", "w") as f:
 		f.write(json.dumps(data))
 		print("data saved")
-
-	command = ("ffmpeg -y -i %s -i %s -threads %d -c:v copy -c:a copy %s -loglevel panic" % \
-		(os.path.join(args.pyaviPath, 'video_only.avi'), os.path.join(args.pyaviPath, 'audio.wav'), \
-		args.nDataLoaderThread, os.path.join(args.pyaviPath,'video_out.avi'))) 
-	output = subprocess.call(command, shell=True, stdout=None)
+	
+	# command = ("ffmpeg -y -i %s -i %s -threads %d -c:v copy -c:a copy %s -loglevel panic" % \
+	# 	(os.path.join(args.pyaviPath, 'video_only.avi'), os.path.join(args.pyaviPath, 'audio.wav'), \
+	# 	args.nDataLoaderThread, os.path.join(args.pyaviPath,'video_out.avi'))) 
+	# output = subprocess.call(command, shell=True, stdout=None)
+	return
 
 def evaluate_col_ASD(tracks, scores, args):
 	txtPath = args.videoFolder + '/col_labels/fusion/*.txt' # Load labels
@@ -370,6 +369,22 @@ def evaluate_col_ASD(tracks, scores, args):
 			print("%s, ACC:%.2f, F1:%.2f"%(i, 100 * ACC, 100 * F1))
 	print("Average F1:%.2f"%(100 * (F1s / 5)))	  
 
+def get_source_fps(input_path):
+    video_fps = 0
+    try:
+        media_info = ffmpeg.probe(input_path)
+        for stream in media_info["streams"]:
+            if "/" in stream["r_frame_rate"]:
+                numerator = float(stream["r_frame_rate"].split("/")[0])
+                denominator = float(stream["r_frame_rate"].split("/")[1])
+                if denominator > 0:
+                    video_fps = numerator / denominator
+            else:
+                video_fps = round(float(stream["r_frame_rate"]))
+    except Exception as e:
+        print("something went wrong while reading FPS from video stream : {}".format(e),)
+    return video_fps
+
 # Main function
 def main():
 	# This preprocesstion is modified based on this [repository](https://github.com/joonson/syncnet_python).
@@ -409,14 +424,16 @@ def main():
 	os.makedirs(args.pyworkPath, exist_ok = True) # Save the results in this process by the pckl method
 	os.makedirs(args.pycropPath, exist_ok = True) # Save the detected face clips (audio+video) in this process
 
+	source_fps = int(get_source_fps(args.videoPath)) # TODO
+	print(source_fps)
 	# Extract video
 	args.videoFilePath = os.path.join(args.pyaviPath, 'video.avi')
 	# If duration did not set, extract the whole video, otherwise extract the video from 'args.start' to 'args.start + args.duration'
 	if args.duration == 0:
-		command = ("ffmpeg -y -i %s -qscale:v 2 -threads %d -async 1 -r 25 %s -loglevel panic" % \
-			(args.videoPath, args.nDataLoaderThread, args.videoFilePath))
+		command = ("ffmpeg -y -i %s -qscale:v 2 -threads %d -async 1 -r %f %s -loglevel panic" % \
+			(args.videoPath, args.nDataLoaderThread, source_fps, args.videoFilePath))
 	else:
-		command = ("ffmpeg -y -i %s -qscale:v 2 -threads %d -ss %.3f -to %.3f -async 1 -r 25 %s -loglevel panic" % \
+		command = ("ffmpeg -y -i %s -qscale:v 2 -threads %d -ss %.3f -to %.3f -async 1 -r %f %s -loglevel panic" % \
 			(args.videoPath, args.nDataLoaderThread, args.start, args.start + args.duration, args.videoFilePath))
 	subprocess.call(command, shell=True, stdout=None)
 	sys.stderr.write(time.strftime("%Y-%m-%d %H:%M:%S") + " Extract the video and save in %s \r\n" %(args.videoFilePath))
@@ -451,7 +468,7 @@ def main():
 
 	# Face clips cropping
 	for ii, track in tqdm.tqdm(enumerate(allTracks), total = len(allTracks)):
-		vidTracks.append(crop_video(args, track, os.path.join(args.pycropPath, '%05d'%ii)))
+		vidTracks.append(crop_video(args, track, os.path.join(args.pycropPath, '%05d'%ii), source_fps))
 	savePath = os.path.join(args.pyworkPath, 'tracks.pckl')
 	with open(savePath, 'wb') as fil:
 		pickle.dump(vidTracks, fil)
@@ -462,7 +479,7 @@ def main():
 	# Active Speaker Detection by TalkNet
 	files = glob.glob("%s/*.avi"%args.pycropPath)
 	files.sort()
-	scores = evaluate_network(files, args)
+	scores = evaluate_network(files, args, source_fps)
 	savePath = os.path.join(args.pyworkPath, 'scores.pckl')
 	with open(savePath, 'wb') as fil:
 		pickle.dump(scores, fil)
@@ -473,7 +490,7 @@ def main():
 		quit()
 	else:
 		# Visualization, save the result as the new video	
-		visualization(vidTracks, scores, args)	
+		visualization(vidTracks, scores, args, source_fps)	
 
 if __name__ == '__main__':
     main()
