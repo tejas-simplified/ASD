@@ -16,7 +16,7 @@ img_mean = np.array([104., 117., 123.])[:, np.newaxis, np.newaxis].astype('float
 
 class S3FD():
 
-    def __init__(self, device='cuda'):
+    def __init__(self, device='cpu'):
 
         tstamp = time.time()
         self.device = device
@@ -24,6 +24,7 @@ class S3FD():
         # print('[S3FD] loading with', self.device)
         self.net = S3FDNet(device=self.device).to(self.device)
         PATH = os.path.join(os.getcwd(), PATH_WEIGHT)
+        print("path : ", PATH)
         state_dict = torch.load(PATH, map_location=self.device)
         self.net.load_state_dict(state_dict)
         self.net.eval()
@@ -42,12 +43,19 @@ class S3FD():
                 scaled_img = cv2.resize(image, dsize=(0, 0), fx=s, fy=s, interpolation=cv2.INTER_LINEAR)
                 print("scaled_img : ", scaled_img.shape)
                 scaled_img = np.swapaxes(scaled_img, 1, 2)
+                print("cp1")
                 scaled_img = np.swapaxes(scaled_img, 1, 0)
+                print("cp2")
                 scaled_img = scaled_img[[2, 1, 0], :, :]
+                print("cp3")
                 scaled_img = scaled_img.astype('float32')
+                print("cp4")
                 scaled_img -= img_mean
+                print("cp5")
                 scaled_img = scaled_img[[2, 1, 0], :, :]
+                print("cp6")
                 x = torch.from_numpy(scaled_img).unsqueeze(0).to(self.device)
+                print("cp7")
                 y = self.net(x)
                 print("y")
 
