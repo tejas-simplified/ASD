@@ -30,6 +30,7 @@ class S3FD():
         # print('[S3FD] finished loading (%.4f sec)' % (time.time() - tstamp))
     
     def detect_faces(self, image, conf_th=0.8, scales=[1]):
+        print("inside detect faces")
 
         w, h = image.shape[1], image.shape[0]
 
@@ -37,25 +38,28 @@ class S3FD():
 
         with torch.no_grad():
             for s in scales:
+                print("s : ", s)
                 scaled_img = cv2.resize(image, dsize=(0, 0), fx=s, fy=s, interpolation=cv2.INTER_LINEAR)
-
+                print("scaled_img : ", scaled_img.shape)
                 scaled_img = np.swapaxes(scaled_img, 1, 2)
                 scaled_img = np.swapaxes(scaled_img, 1, 0)
                 scaled_img = scaled_img[[2, 1, 0], :, :]
                 scaled_img = scaled_img.astype('float32')
                 scaled_img -= img_mean
                 scaled_img = scaled_img[[2, 1, 0], :, :]
-                x = torch.from_numpy(scaled_img).unsqueeze(0).to(self.device)
+                x = torch.from_numpy(scaled_img).unsqueeze(0)# .to(self.device)
                 y = self.net(x)
+                print("y")
 
                 detections = y.data
                 scale = torch.Tensor([w, h, w, h])
-
+                print("new for loop")
                 for i in range(detections.size(1)):
                     j = 0
                     while detections[0, i, j, 0] > conf_th:
                         score = detections[0, i, j, 0]
-                        pt = (detections[0, i, j, 1:] * scale).cpu().numpy()
+                        # pt = (detections[0, i, j, 1:] * scale).cpu().numpy()
+                        pt = (detections[0, i, j, 1:] * scale).numpy()
                         bbox = (pt[0], pt[1], pt[2], pt[3], score)
                         bboxes = np.vstack((bboxes, bbox))
                         j += 1
