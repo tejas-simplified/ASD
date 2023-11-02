@@ -97,10 +97,8 @@ def scene_detect(args):
 def inference_video(args):
 	# GPU: Face detection, output is the list contains the face location and score in this frame
 	DET = S3FD(device='cpu')
-	print("cp1")	
 	flist = glob.glob(os.path.join(args.pyframesPath, '*.jpg'))
 	flist.sort()
-	print("cp2")
 	dets = []
 	for fidx, fname in enumerate(flist):
 		image = cv2.imread(fname)
@@ -111,7 +109,6 @@ def inference_video(args):
 		  dets[-1].append({'frame':fidx, 'bbox':(bbox[:-1]).tolist(), 'conf':bbox[-1]}) # dets has the frames info, bbox info, conf info
 		sys.stderr.write('%s-%05d; %d dets\r' % (args.videoFilePath, fidx, len(dets[-1])))
 	savePath = os.path.join(args.pyworkPath,'faces.pckl')
-	print("cp3")
 	with open(savePath, 'wb') as fil:
 		pickle.dump(dets, fil)
 	return dets
@@ -236,21 +233,15 @@ def evaluate_network(files, args, fps):
 				break
 		video.release()
 		videoFeature = numpy.array(videoFeature)
-		print("orig audioFeature", audioFeature.shape)
-		print("orig videofeature : ", videoFeature.shape)
 		length = min((audioFeature.shape[0] - audioFeature.shape[0] % 4) / (fps*4), videoFeature.shape[0] / fps)
 		audioFeature = audioFeature[:int(round(length * (fps * 4))),:]
 		videoFeature = videoFeature[:int(round(length * fps)),:,:]
-		print(audioFeature.shape, videoFeature.shape)
 		allScore = [] # Evaluation use TalkNet
 		for duration in durationSet:
 			batchSize = int(math.ceil(length / duration))
 			scores = []
 			with torch.no_grad():
 				for i in range(batchSize):
-					print("audio", i * duration * (fps*4), (i+1) * duration * (fps*4))
-					print("video", i * duration * fps, (i+1) * duration * fps)
-
 					inputA = torch.FloatTensor(audioFeature[i * duration * (fps*4):(i+1) * duration * (fps*4),:]).unsqueeze(0) #.cuda()
 					inputV = torch.FloatTensor(videoFeature[i * duration * fps: (i+1) * duration * fps,:,:]).unsqueeze(0) #.cuda()
 					embedA = s.model.forward_audio_frontend(inputA)
@@ -428,7 +419,7 @@ def main():
 	os.makedirs(args.pycropPath, exist_ok = True) # Save the detected face clips (audio+video) in this process
 
 	source_fps = int(get_source_fps(args.videoPath)) # TODO
-	print(source_fps)
+	print("source_fps : ", source_fps)
 	# Extract video
 	args.videoFilePath = os.path.join(args.pyaviPath, 'video.avi')
 	# If duration did not set, extract the whole video, otherwise extract the video from 'args.start' to 'args.start + args.duration'
