@@ -374,7 +374,7 @@ def get_source_fps(input_path):
                 if denominator > 0:
                     video_fps = numerator / denominator
             else:
-                video_fps = round(float(stream["r_frame_rate"]))
+                video_fps = float(stream["r_frame_rate"])
     except Exception as e:
         print("something went wrong while reading FPS from video stream : {}".format(e),)
     return video_fps
