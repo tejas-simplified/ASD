@@ -96,6 +96,7 @@ def scene_detect(args):
 
 def inference_video(args):
 	# GPU: Face detection, output is the list contains the face location and score in this frame
+	face_detection_scales = [0.25]
 	DET = S3FD(device='cpu')
 	flist = glob.glob(os.path.join(args.pyframesPath, '*.jpg'))
 	flist.sort()
@@ -103,11 +104,13 @@ def inference_video(args):
 	for fidx, fname in enumerate(flist):
 		image = cv2.imread(fname)
 		imageNumpy = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-		bboxes = DET.detect_faces(imageNumpy, conf_th=0.9, scales=[args.facedetScale])
+		bboxes = DET.detect_faces(imageNumpy, conf_th=0.9, scales=face_detection_scales)
 		dets.append([])
 		for bbox in bboxes:
-		  dets[-1].append({'frame':fidx, 'bbox':(bbox[:-1]).tolist(), 'conf':bbox[-1]}) # dets has the frames info, bbox info, conf info
-		sys.stderr.write('%s-%05d; %d dets\r' % (args.videoFilePath, fidx, len(dets[-1])))
+			dets[-1].append({'frame':fidx, 'bbox':(bbox[:-1]).tolist(), 'conf':bbox[-1]}) # dets has the frames info, bbox info, conf info
+			# sys.stderr.write('%s-%05d; %d dets\r' % (args.videoFilePath, fidx, len(dets[-1])))
+			if fidx %100==0:
+				print("face detection : ", fidx)
 	savePath = os.path.join(args.pyworkPath,'faces.pckl')
 	with open(savePath, 'wb') as fil:
 		pickle.dump(dets, fil)
@@ -418,17 +421,38 @@ def main():
 	os.makedirs(args.pyworkPath, exist_ok = True) # Save the results in this process by the pckl method
 	os.makedirs(args.pycropPath, exist_ok = True) # Save the detected face clips (audio+video) in this process
 
-	source_fps = int(get_source_fps(args.videoPath)) # TODO
+	source_video_path = args.videoPath
+	source_fps = get_source_fps(args.videoPath)
+	if int(source_fps) != source_fps:
+		new_fps = 30
+		if source_fps > 60:
+			new_fps = 60
+		elif source_fps > 30:
+			new_fps = 30
+		elif source_fps > 25:
+			new_fps = 25
+		else:
+			new_fps = 24
+		new_video_name = "modified_input_video.mp4"
+		new_video_path = os.path.join(args.videoFolder, new_video_name)
+		print("floating fps : converting to nearest common FPS")
+		command = ["ffmpeg", "-i", args.videoPath, "-r", str(new_fps), new_video_path, "-y"]
+		print(command)
+		error_code = subprocess.call(command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+		print("error_code : ", error_code)
+		source_video_path = new_video_path		
+		source_fps = int(get_source_fps(source_video_path))
+		
 	print("source_fps : ", source_fps)
 	# Extract video
 	args.videoFilePath = os.path.join(args.pyaviPath, 'video.avi')
 	# If duration did not set, extract the whole video, otherwise extract the video from 'args.start' to 'args.start + args.duration'
 	if args.duration == 0:
 		command = ("ffmpeg -y -i %s -qscale:v 2 -threads %d -async 1 -r %f %s -loglevel panic" % \
-			(args.videoPath, args.nDataLoaderThread, source_fps, args.videoFilePath))
+			(source_video_path, args.nDataLoaderThread, source_fps, args.videoFilePath))
 	else:
 		command = ("ffmpeg -y -i %s -qscale:v 2 -threads %d -ss %.3f -to %.3f -async 1 -r %f %s -loglevel panic" % \
-			(args.videoPath, args.nDataLoaderThread, args.start, args.start + args.duration, args.videoFilePath))
+			(source_video_path, args.nDataLoaderThread, args.start, args.start + args.duration, args.videoFilePath))
 	subprocess.call(command, shell=True, stdout=None)
 	sys.stderr.write(time.strftime("%Y-%m-%d %H:%M:%S") + " Extract the video and save in %s \r\n" %(args.videoFilePath))
 	
