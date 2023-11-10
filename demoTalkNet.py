@@ -436,7 +436,7 @@ def main():
 		new_video_name = "modified_input_video.mp4"
 		new_video_path = os.path.join(args.videoFolder, new_video_name)
 		print("floating fps : converting to nearest common FPS")
-		command = ["ffmpeg", "-i", args.videoPath, "-r", str(new_fps), new_video_path, "-y"]
+		command = ["ffmpeg", "-i", args.videoPath, "-r", str(new_fps), "-preset", "ultrafast", "-crf", "17",  new_video_path, "-y"]
 		print(command)
 		error_code = subprocess.call(command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
 		print("error_code : ", error_code)
