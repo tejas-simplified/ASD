@@ -442,7 +442,9 @@ def main():
 		print("error_code : ", error_code)
 		source_video_path = new_video_path		
 		source_fps = int(get_source_fps(source_video_path))
-		
+	else:
+		source_fps = int(source_fps)
+     
 	print("source_fps : ", source_fps)
 	# Extract video
 	args.videoFilePath = os.path.join(args.pyaviPath, 'video.avi')
