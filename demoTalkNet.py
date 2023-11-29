@@ -366,6 +366,16 @@ def evaluate_col_ASD(tracks, scores, args):
 			print("%s, ACC:%.2f, F1:%.2f"%(i, 100 * ACC, 100 * F1))
 	print("Average F1:%.2f"%(100 * (F1s / 5)))	  
 
+def is_it_thumbnail_stream(stream):
+	decision = False
+	stream_disposition = stream.get("disposition", {})
+	stream_avg_frame_rate = stream.get("avg_frame_rate")
+	condition1 = int(stream_disposition.get("attached_pic", "0")) == 1
+	condition2 = stream_avg_frame_rate == "0/0"
+	if condition1 and condition2:
+		decision = True
+	return decision
+
 def get_source_fps(input_path):
     video_fps = 0
     try:
@@ -381,6 +391,51 @@ def get_source_fps(input_path):
     except Exception as e:
         print("something went wrong while reading FPS from video stream : {}".format(e),)
     return video_fps
+
+def get_width_heigth_from_url(file_path):
+	media_info = ffmpeg.probe(file_path)
+	metadata = {}
+	for stream in media_info["streams"]:
+		if stream["codec_type"].lower() == "video":
+			if is_it_thumbnail_stream(stream):
+				continue
+			metadata["width"] = int(stream["width"])
+			metadata["height"] = int(stream["height"])
+			break
+	return metadata
+
+def get_new_fps(source_fps):
+	new_fps = 30
+	if source_fps > 60:
+		new_fps = 60
+	elif source_fps > 30:
+		new_fps = 30
+	elif source_fps > 25:
+		new_fps = 25
+	else:
+		new_fps = 24
+	return new_fps
+
+def get_new_width_height(metadata):
+    MAX_WIDTH = 1920
+    MAX_HEIGHT = 1080
+    current_width = metadata["width"]
+    current_height = metadata["height"]
+    aspect_ratio = current_width/current_height
+    new_width = MAX_WIDTH
+    new_height = MAX_HEIGHT
+    if current_width >= current_height:
+        new_width = MAX_WIDTH
+        new_height = int(new_width/aspect_ratio)
+        if new_height %2 != 0:
+            new_height -= 1
+    else:
+        new_height = MAX_HEIGHT
+        new_width = int(new_height * aspect_ratio)
+        if new_width %2 != 0:
+            new_width -= 1
+    
+    return new_width, new_height
 
 # Main function
 def main():
@@ -423,20 +478,44 @@ def main():
 
 	source_video_path = args.videoPath
 	source_fps = get_source_fps(args.videoPath)
+	does_input_require_fps_manipulation = False
 	if int(source_fps) != source_fps:
-		new_fps = 30
-		if source_fps > 60:
-			new_fps = 60
-		elif source_fps > 30:
-			new_fps = 30
-		elif source_fps > 25:
-			new_fps = 25
-		else:
-			new_fps = 24
+		does_input_require_fps_manipulation = True
+	
+	does_input_require_resolution_manipulation = False
+	metadata = get_width_heigth_from_url(args.videoPath)
+	if metadata["width"] > 1920 or metadata["height"] > 1080:
+		does_input_require_resolution_manipulation = True
+
+	if does_input_require_fps_manipulation and not does_input_require_resolution_manipulation:
+		new_fps = get_new_fps(source_fps)
 		new_video_name = "modified_input_video.mp4"
 		new_video_path = os.path.join(args.videoFolder, new_video_name)
 		print("floating fps : converting to nearest common FPS")
 		command = ["ffmpeg", "-i", args.videoPath, "-r", str(new_fps), "-preset", "ultrafast", "-crf", "17",  new_video_path, "-y"]
+		print(command)
+		error_code = subprocess.call(command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+		print("error_code : ", error_code)
+		source_video_path = new_video_path		
+		source_fps = int(get_source_fps(source_video_path))
+	elif does_input_require_resolution_manipulation and not does_input_require_fps_manipulation:
+		new_width, new_height = get_new_width_height(metadata)
+		new_video_name = "modified_input_video.mp4"
+		new_video_path = os.path.join(args.videoFolder, new_video_name)
+		print("resolution manipulation : converting to nearest 1080p")
+		command = ["ffmpeg", "-i", args.videoPath, "-vf", f"scale={new_width}:{new_height}", "-preset", "ultrafast", "-crf", "17",  new_video_path, "-y"]
+		print(command)
+		error_code = subprocess.call(command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+		print("error_code : ", error_code)
+		source_video_path = new_video_path		
+		source_fps = int(get_source_fps(source_video_path))
+	elif does_input_require_resolution_manipulation and does_input_require_fps_manipulation:
+		new_fps = get_new_fps(source_fps)
+		new_width, new_height = get_new_width_height(metadata)
+		new_video_name = "modified_input_video.mp4"
+		new_video_path = os.path.join(args.videoFolder, new_video_name)
+		print("resolution manipulation : converting to nearest 1080p")
+		command = ["ffmpeg", "-i", args.videoPath, "-vf", f"scale={new_width}:{new_height}", "-r", str(new_fps), "-preset", "ultrafast", "-crf", "17",  new_video_path, "-y"]
 		print(command)
 		error_code = subprocess.call(command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
 		print("error_code : ", error_code)
