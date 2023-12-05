@@ -141,9 +141,15 @@ def scene_detect(args):
     return sceneList
 
 
-def inference_video(args):
+def inference_video(args, source_width, source_height):
     # GPU: Face detection, output is the list contains the face location and score in this frame
-    face_detection_scales = [0.25, 0.5]
+    if source_width <= 1280 and source_height <= 1280:
+        face_detection_scales = [0.5]
+    elif source_width <= 1920 and source_height <= 1920:
+        face_detection_scales = [0.25]
+    else:
+        face_detection_scales = [0.25]
+
     DET = S3FD(device="cpu")
     flist = glob.glob(os.path.join(args.pyframesPath, "*.jpg"))
     flist.sort()
@@ -820,7 +826,7 @@ def main():
     )
 
     # Face detection for the video frames
-    faces = inference_video(args)
+    faces = inference_video(args, metadata["width"], metadata["height"])
     sys.stderr.write(
         time.strftime("%Y-%m-%d %H:%M:%S")
         + " Face detection and save in %s \r\n" % (args.pyworkPath)
