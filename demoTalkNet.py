@@ -428,10 +428,10 @@ def visualization(tracks, scores, args, fps):
                 5,
             )
             x_, y_, w_, h_ = (
-                face["x"] - face["s"],
-                face["y"] - face["s"],
-                face["s"] * 2,
-                face["s"] * 2,
+                int(face["x"] - face["s"]),
+                int(face["y"] - face["s"]),
+                int(face["s"] * 2),
+                int(face["s"] * 2),
             )
             tmp_data.append([x_, y_, w_, h_, txt])
         vOut.write(image)
