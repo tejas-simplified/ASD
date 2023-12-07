@@ -144,7 +144,7 @@ def scene_detect(args):
 def inference_video(args, source_width, source_height):
     # GPU: Face detection, output is the list contains the face location and score in this frame
     if source_width <= 1280 and source_height <= 1280:
-        face_detection_scales = [0.5]
+        face_detection_scales = [0.4]
     elif source_width <= 1920 and source_height <= 1920:
         face_detection_scales = [0.25]
     else:
@@ -297,19 +297,9 @@ def evaluate_network(files, args, fps):
     s.eval()
     allScores = []
     # durationSet = {1,2,4,6} # To make the result more reliable
-    durationSet = {
-        1,
-        1,
-        1,
-        2,
-        2,
-        2,
-        3,
-        3,
-        4,
-        5,
-        6,
-    }  # Use this line can get more reliable result
+    durationSet = [ 1, 1, 1, 2, 2, 2, 3, 3, 4, 5, 6]  # Use this line can get more reliable result
+    durationSet = [ 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 8, 9] # our version
+    
     for file in tqdm.tqdm(files, total=len(files)):
         fileName = os.path.splitext(file.split("/")[-1])[0]  # Load audio and video
         _, audio = wavfile.read(os.path.join(args.pycropPath, fileName + ".wav"))
