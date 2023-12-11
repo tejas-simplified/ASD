@@ -150,7 +150,10 @@ def inference_video(args, source_width, source_height):
     else:
         face_detection_scales = [0.25]
 
-    DET = S3FD(device="cpu")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cuda":
+        print("device name", torch.cuda.get_device_name(0))
+    DET = S3FD(device=device)
     flist = glob.glob(os.path.join(args.pyframesPath, "*.jpg"))
     flist.sort()
     dets = []
