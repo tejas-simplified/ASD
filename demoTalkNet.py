@@ -758,7 +758,7 @@ def main():
 
     print("source_fps : ", source_fps)
     # Extract video
-    args.videoFilePath = os.path.join(args.pyaviPath, "video_01.avi")
+    args.videoFilePath = os.path.join(args.pyaviPath, "video_01.mp4")
     # If duration did not set, extract the whole video, otherwise extract the video from 'args.start' to 'args.start + args.duration'
     if args.duration == 0:
         command = (
