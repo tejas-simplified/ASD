@@ -344,14 +344,14 @@ def evaluate_network(files, args, fps):
                         ]
                     ).unsqueeze(
                         0
-                    )  # .cuda()
+                    ).cuda()
                     inputV = torch.FloatTensor(
                         videoFeature[
                             i * duration * fps : (i + 1) * duration * fps, :, :
                         ]
                     ).unsqueeze(
                         0
-                    )  # .cuda()
+                    ).cuda()
                     embedA = s.model.forward_audio_frontend(inputA)
                     embedV = s.model.forward_visual_frontend(inputV)
                     embedA, embedV = s.model.forward_cross_attention(embedA, embedV)
@@ -758,7 +758,7 @@ def main():
 
     print("source_fps : ", source_fps)
     # Extract video
-    args.videoFilePath = os.path.join(args.pyaviPath, "video_01.mp4")
+    args.videoFilePath = os.path.join(args.pyaviPath, "video.avi")
     # If duration did not set, extract the whole video, otherwise extract the video from 'args.start' to 'args.start + args.duration'
     if args.duration == 0:
         command = (
