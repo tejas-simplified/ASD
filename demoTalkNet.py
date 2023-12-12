@@ -172,6 +172,8 @@ def inference_video(args, source_width, source_height):
     savePath = os.path.join(args.pyworkPath, "faces.pckl")
     with open(savePath, "wb") as fil:
         pickle.dump(dets, fil)
+    
+    del DET # deleting model so that GPU memory is freed
     return dets
 
 
@@ -363,6 +365,7 @@ def evaluate_network(files, args, fps):
             float
         )
         allScores.append(allScore)
+    del s # deleting model so that GPU memory is freed
     return allScores
 
 
